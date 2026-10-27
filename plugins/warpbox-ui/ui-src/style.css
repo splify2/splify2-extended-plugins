@@ -1,0 +1,30 @@
+/* Панель живёт в shadow root: стили плагина доходят только через ui.css. Цвета — переменные темы. */
+.warpbox-ui, .warpbox-ui__controls, .warpbox-ui__group { display: grid; gap: 0.75rem; }
+.warpbox-ui__group { padding: 0.75rem; border: 1px solid var(--sp-border); border-radius: 1rem; }
+.warpbox-ui__tile { display: grid; gap: 0.6rem; padding: 0.85rem; border: 1px solid var(--sp-border); border-radius: 1rem; min-width: 0; }
+.warpbox-ui__tile-title { font-size: 13px; font-weight: 600; }
+.warpbox-ui__controls { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; }
+.warpbox-ui__head { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.warpbox-ui__head h3 { margin: 0; font-size: 1rem; }
+.warpbox-ui__grow { flex: 1; min-width: 0; }
+.warpbox-ui__row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.warpbox-ui__note { color: var(--sp-muted-foreground); font-size: 12px; }
+.warpbox-ui__error { color: var(--sp-destructive); font-size: 13px; }
+.warpbox-ui__mono { font-family: var(--sp-font-mono); }
+.warpbox-ui__pills { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem; }
+.warpbox-ui__pill { display: grid; gap: 0.15rem; padding: 0.5rem 0.7rem; border: 1px solid var(--sp-border); border-radius: 0.75rem; min-width: 0; }
+.warpbox-ui__pill[data-on="1"] { border-color: var(--sp-primary); }
+.warpbox-ui__pill-top { display: flex; align-items: center; gap: 0.4rem; font-weight: 600; font-size: 13px; }
+.warpbox-ui__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sp-muted-foreground); flex: none; }
+.warpbox-ui__dot[data-state="ok"] { background: var(--sp-success); }
+.warpbox-ui__dot[data-state="bad"] { background: var(--sp-destructive); }
+.warpbox-ui__dot[data-state="wait"] { background: var(--sp-warning); }
+.warpbox-ui__chips { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.warpbox-ui__hero { display: flex; gap: 0.75rem; align-items: center; }
+.warpbox-ui__add { width: 100%; height: 56px; border: 1px dashed var(--sp-border); border-radius: 1rem; background: transparent; color: var(--sp-muted-foreground); cursor: pointer; }
+.warpbox-ui__add:hover { border-color: var(--sp-primary); color: var(--sp-primary); }
+.warpbox-ui__tablewrap { overflow-x: auto; }
+.warpbox-ui__points { width: 100%; border-collapse: collapse; font-size: 13px; }
+.warpbox-ui__points th, .warpbox-ui__points td { text-align: left; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--sp-border); }
+.warpbox-ui__points tr[data-class="1"] td, .warpbox-ui__points tr[data-class="2"] td { color: var(--sp-muted-foreground); }
+.warpbox-ui__via { display: grid; gap: 0.75rem; }

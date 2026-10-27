@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "warpbox-ui",
+  "version": "1.0.0",
+  "type": "plugin",
+  "name": "WARP",
+  "description": "Cloudflare WARP in the panel: outputs, tunnels, entry points, country",
+  "license": "GPL-3.0-only",
+  "homepage": "https://github.com/splify2/splify2-extended-plugins",
+  "compat": {
+    "host-api": "^1.0",
+    "splify2-api": "^1.0"
+  },
+  "arch": "all",
+  "requires": {
+    "plugins": {
+      "warpbox": "^2.1"
+    }
+  },
+  "rpc": {
+    "prog": "rpc/warpbox",
+    "methods": {
+      "scan": { "access": "write", "timeout_s": 15 },
+      "scan_state": { "access": "read", "timeout_s": 15 },
+      "defaults_get": { "access": "read", "timeout_s": 15 },
+      "defaults_set": { "access": "write", "timeout_s": 15 }
+    }
+  },
+  "ui": {
+    "entry": "ui/index.js",
+    "css": ["ui/style.css"]
+  },
+  "splify2": {
+    "settings": { "schema": "settings.schema.json" }
+  },
+  "i18n": { "languages": ["ru", "en"] }
+}

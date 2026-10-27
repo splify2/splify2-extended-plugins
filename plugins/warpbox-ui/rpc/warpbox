@@ -1,0 +1,105 @@
+#!/bin/sh
+# Методы плагина warpbox-ui для панели: $1 — метод, параметры — JSON в stdin, ответ — объект JSON.
+#
+#   scan {group}          запустить подбор точек входа выхода WARP (в фоне: он идёт минуту и дольше)
+#   scan_state {group}    идёт ли подбор, когда закончился последний и что он нашёл
+#   defaults_get          что новый выход WARP получает по умолчанию (настройки плагина)
+#   defaults_set {…}      записать эти настройки: transport, count, pick, exclude_countries
+#
+# Платформой пользуется только через API: библиотека $SPLIFY2_LIB и службы хоста $SPLIFY2_HOST (spec get, paths,
+# settings). Конфигов туннелей, регистраций и спеки на диске не читает: что нужно человеку, берёт панель из status и спеки.
+. "${SPLIFY2_LIB:?программа запускается хостом splify2 (нет SPLIFY2_LIB)}"
+RUN="${STEER_PLUGIN_STATE:?нет STEER_PLUGIN_STATE}"
+METHOD="${1:?нет метода}"
+read -r input 2>/dev/null || true
+[ -n "$input" ] || input='{}'
+json_load "$input" 2>/dev/null || s2_fail_code req.unparsable "Unparsable request"
+group=''; transport=''; count=''; pick=''; exclude_countries=''
+json_get_var group group
+json_get_var transport transport
+json_get_var count count
+json_get_var pick pick
+json_get_var exclude_countries exclude_countries
+
+# Имя выхода уходит в пути файлов и в командную строку: годятся только безопасные знаки; длина — как у ядра.
+group_ok() {
+    case "$1" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+    [ "${#1}" -le 27 ]
+}
+
+# Такой выход kind: warp есть в спеке (её отдаёт хост).
+group_is_warp() {
+    _k="$("$SPLIFY2_HOST" spec get 2>/dev/null | jsonfilter -e "@.outputs['$1'].kind" 2>/dev/null)"
+    [ "$_k" = warp ]
+}
+
+scan_running() {  # ГРУППА
+    [ -s "$RUN/scan-$1.run" ] || return 1
+    read -r _pid < "$RUN/scan-$1.run"
+    case "$_pid" in ''|*[!0-9]*) return 1 ;; esac
+    kill -0 "$_pid" 2>/dev/null
+}
+
+need_group() {
+    group_ok "$group" || s2_fail_code warp.bad_group "Invalid output name"
+    group_is_warp "$group" || s2_fail_code warp.no_group "There is no WARP output with this name in the spec"
+}
+
+case "$METHOD" in
+scan)
+    need_group
+    if scan_running "$group"; then
+        json_init; json_add_boolean ok 1; json_add_boolean running 1; json_dump
+        exit 0
+    fi
+    steer="$("$SPLIFY2_HOST" paths 2>/dev/null | jsonfilter -e '@.steer' 2>/dev/null)"
+    [ -x "$steer" ] || s2_fail_code warp.no_steer "The core program is not found"
+    rm -f "$RUN/scan-$group.json"
+    # Свой сеанс и свои дескрипторы: ответ клиенту уходит сразу, итог лежит файлом, который читает scan_state.
+    setsid "$STEER_PLUGIN_DIR/bin/scan-job" "$group" "$steer" </dev/null >/dev/null 2>&1 &
+    json_init; json_add_boolean ok 1; json_add_boolean started 1; json_dump
+    ;;
+scan_state)
+    group_ok "$group" || s2_fail_code warp.bad_group "Invalid output name"
+    running=0; scan_running "$group" && running=1
+    at=0; res=''
+    if [ -s "$RUN/scan-$group.json" ]; then
+        at="$(date -r "$RUN/scan-$group.json" +%s 2>/dev/null || echo 0)"
+        res="$(cat "$RUN/scan-$group.json")"
+        # Не JSON-объект (процесс убит на середине, ядро вывело не то) — разберёмся по журналу ниже.
+        [ -n "$(jsonfilter -s "$res" -e '@' 2>/dev/null)" ] || res=''
+    fi
+    if [ -z "$res" ] && [ "$running" = 0 ] && { [ -e "$RUN/scan-$group.json" ] || [ -e "$RUN/scan-$group.log" ]; }; then
+        # Подбор, закончившийся ничем (ядро не ответило, процесс убит), отдаёт причину, а не молчит.
+        [ "$at" -gt 0 ] || at="$(date -r "$RUN/scan-$group.log" +%s 2>/dev/null || echo 0)"
+        why="$(grep . "$RUN/scan-$group.log" 2>/dev/null | tail -n 1 | tr -d '\000-\037' | head -c 300)"
+        [ -n "$why" ] || why="$(s2_t warp.scan_empty 'The scan returned no answer')"
+        json_init; json_add_boolean ok 0; json_add_string error "$why"; res="$(json_dump)"
+    fi
+    printf '{"ok":true,"running":%s,"at":%s,"result":%s}\n' "$([ "$running" = 1 ] && echo true || echo false)" "$at" "${res:-null}"
+    ;;
+defaults_get)
+    json_init
+    json_add_boolean ok 1
+    json_add_string transport "$("$SPLIFY2_HOST" settings get transport 2>/dev/null || echo awg)"
+    json_add_int count "$("$SPLIFY2_HOST" settings get count 2>/dev/null || echo 1)"
+    json_add_string pick "$("$SPLIFY2_HOST" settings get pick 2>/dev/null || echo latency)"
+    json_add_string exclude_countries "$("$SPLIFY2_HOST" settings get exclude_countries 2>/dev/null)"
+    json_dump
+    ;;
+defaults_set)
+    # Пустое значение возвращает умолчание схемы; тип и пределы проверяет сама служба.
+    for k in transport count pick exclude_countries; do
+        eval "v=\$$k"
+        ans="$("$SPLIFY2_HOST" settings set "$k" "$v" 2>/dev/null)"
+        if [ "$(jsonfilter -s "$ans" -e '@.ok' 2>/dev/null)" != true ]; then
+            e="$(jsonfilter -s "$ans" -e '@.error' 2>/dev/null)"
+            s2_fail "${e:-$k}"
+        fi
+    done
+    json_init; json_add_boolean ok 1; json_dump
+    ;;
+*)
+    s2_fail_code req.unknown_method "Unknown method {method}" method "$METHOD"
+    ;;
+esac

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Подбор точек входа выхода WARP в фоне: `steer warp-scan ВЫХОД`; итог — файл, который читает метод scan_state.
+#
+#   scan-job ВЫХОД ПРОГРАММА_ЯДРА
+RUN="${STEER_PLUGIN_STATE:?нет STEER_PLUGIN_STATE}"
+G="${1:?нет выхода}"; CORE="${2:?нет программы ядра}"
+case "$G" in ''|*[!A-Za-z0-9_-]*) exit 1 ;; esac
+printf '%s\n' "$$" > "$RUN/scan-$G.run"
+rm -f "$RUN/scan-$G.json"
+# Под временным именем и переименованием: читатель никогда не увидит половину файла.
+"$CORE" warp-scan "$G" > "$RUN/scan-$G.json.tmp" 2> "$RUN/scan-$G.log"
+mv "$RUN/scan-$G.json.tmp" "$RUN/scan-$G.json"
+rm -f "$RUN/scan-$G.run"

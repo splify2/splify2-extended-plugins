@@ -7,6 +7,7 @@
 | Плагин | Что делает |
 |---|---|
 | [`recheck`](plugins/recheck) | обход блокировок по содержимому трафика: служба под надзором steer, правила nft в слотах ядра, настройки и состояние во вкладке «Плагины». Движок `steer-dpi-live` — закрытый (репозиторий recheck), в архив ложится готовым файлом |
+| [`tgws`](plugins/tgws) | мост Telegram: соединения клиентов сети с дата-центрами Telegram уходят веб-сокетом через Cloudflare, в приложении ничего не настраивается; пул доменов, пути дата-центров и туннели WARP — в настройках во вкладке «Плагины». Исходник — в дереве ядра steer (`plugins/tgws`, программа на C), отсюда собирается архив |
 
 ## Сборка и проверка
 
@@ -14,6 +15,7 @@
 sh plugins/build.sh                      # lint и сборка плагинов в plugins/dist (без подписи)
 S2P_KEY=ключ.sec sh plugins/build.sh     # с подписью
 RECHECK_ENGINE_DIR=<recheck>/build sh plugins/build.sh recheck   # recheck: .s2p по архитектурам с движком
+STEER_DIR=<steer> sh plugins/build.sh tgws   # tgws: .s2p по архитектурам, под которые steer собрал программу (./build.sh)
 
 STEER=<steer>/build/steer PLUGIN_SDK=<plugin-sdk> sh tests/recheckmatch.sh   # стенд recheck
 ```

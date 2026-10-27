@@ -1,0 +1,76 @@
+#!/bin/sh
+# Методы rpc плагина recheck: $1 — метод, параметры — JSON в stdin, ответ — объект JSON.
+#
+#   status   состояние службы и движка: работает ли, WAN, очереди, счётчики пакетов правил, изученное (файл памяти
+#            движка как есть), последние события движка;
+#   forget   забыть изученное: служба останавливает движок, стирает память и поднимает его заново.
+#
+# Настройки — в схеме плагина (settings.schema.json); пишет их каркас, служба перечитывает сама.
+. "${SPLIFY2_LIB:?программа запускается хостом splify2 (нет SPLIFY2_LIB)}"
+RUN="${STEER_PLUGIN_STATE:?нет STEER_PLUGIN_STATE}"
+CONF="${STEER_PLUGIN_CONF:?нет STEER_PLUGIN_CONF}"
+STATUS="$RUN/recheck.status.json"
+LOG="$RUN/events.log"
+METHOD="${1:?нет метода}"
+read -r input 2>/dev/null || true
+
+# Поле файла состояния службы; пусто — файла нет или он не читается.
+field() { [ -r "$STATUS" ] && jsonfilter -i "$STATUS" -e "@.$1" 2>/dev/null; }
+
+# Служба жива: pid из файла состояния называет её процесс.
+service_pid() {
+    _p="$(field pid)"
+    case "$_p" in ''|*[!0-9]*) return 1 ;; esac
+    tr '\000' ' ' < "/proc/$_p/cmdline" 2>/dev/null | grep -q 'recheck-service' || return 1
+    printf '%s' "$_p"
+}
+
+b() { [ "$1" = true ] && echo 1 || echo 0; }
+
+case "$METHOD" in
+status)
+    json_init
+    json_add_boolean ok 1
+    pid="$(service_pid)" && run=1 || run=0
+    json_add_boolean running "$run"
+    json_add_string version "$(field version)"
+    json_add_string wan "$(field wan)"
+    json_add_string wan_dev "$(field wan_dev)"
+    json_add_int queue "$(field queue || echo 0)"
+    json_add_int watch_queue "$(field watch_queue || echo 0)"
+    json_add_boolean strict "$(b "$(s2_setting strict)")"
+    json_add_boolean persist "$(b "$(s2_setting persist)")"
+    json_add_int learned "$(field learned || echo 0)"
+    json_add_int confirmed "$(field confirmed || echo 0)"
+    # Счётчики правил в слотах ядра: пакеты, ушедшие в очередь движка и в наблюдение.
+    q="$(field queue)"; wq="$(field watch_queue)"
+    cnt="$(nft list table inet "${STEER_NFT_TABLE:-steer}" 2>/dev/null | awk -v q="${q:-0}" -v w="${wq:-0}" '
+        / counter packets / { for (i = 1; i < NF; i++) if ($i == "packets") n = $(i + 1)
+            if ($NF == q) a += n; else if ($NF == w) b += n }
+        END { printf "%d %d", a, b }')"
+    json_add_int queued "${cnt% *}"
+    json_add_int watched "${cnt#* }"
+    if [ "$(field persist)" = true ]; then sf="$CONF/cache.state"; else sf="$RUN/cache.state"; fi
+    if [ -s "$sf" ]; then json_add_string state "$(head -c 262144 "$sf")"; else json_add_string state ""; fi
+    json_add_string events "$(sed -n 's/^\(event=[a-z-]* .*host=[^ ]* ip=[^ ]* port=[0-9]*\).*/\1/p' "$LOG" 2>/dev/null | tail -n 80)"
+    json_dump
+    ;;
+forget)
+    pid="$(service_pid)" || s2_fail_code recheck.not_running "ReCheck is not running"
+    before="$(field starts)"
+    kill -USR2 "$pid" 2>/dev/null || s2_fail_code recheck.not_running "ReCheck is not running"
+    i=0
+    while [ "$i" -lt 100 ]; do
+        sleep 0.2
+        [ "$(field starts)" != "$before" ] && break
+        i=$((i + 1))
+    done
+    [ "$(field starts)" != "$before" ] || s2_fail_code recheck.forget_timeout "ReCheck did not restart in time"
+    json_init
+    json_add_boolean ok 1
+    json_dump
+    ;;
+*)
+    s2_fail_code recheck.unknown_method "Unknown method {method}" method "$METHOD"
+    ;;
+esac

@@ -1,0 +1,4 @@
+{
+  "plugin.name": "ReCheck",
+  "plugin.description": "Bypasses blocking by the content of traffic: notices a block itself and picks a way around it"
+}

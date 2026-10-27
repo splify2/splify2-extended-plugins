@@ -1,0 +1,177 @@
+#!/bin/sh
+# Служба recheck под надзором steer (manifest.md, steer.services[]): запускает движок обхода DPI steer-dpi-live на
+# очередях и метках, которые выдало ядро, держит его в нужном состоянии и сообщает о нём ядру строками событий.
+#
+#   recheck-service ИМЯ ОЧЕРЕДЬ НАБЛЮДЕНИЕ МЕТКА-СВОИХ МЕТКА-ПРОБ
+#
+# События (STEER_EVENT_FD): hello — первым; ready — движок встал; state — переписан файл состояния
+# $STEER_PLUGIN_STATE/recheck.status.json; down — движок не запустился или вышел. Правила nft лежат в слотах
+# ядра (nft/recheck.nft) и стоят, пока служба включена.
+#
+# Что делает сама: настройки из $STEER_PLUGIN_CONF/settings.json читает при каждом запуске движка и перезапускает
+# его, когда файл переписан; смену WAN слышит от netifd (ubus listen) и говорит движку новый путь (SIGHUP) или
+# перезапускает его, если сменилось устройство; USR2 — забыть изученное (метод forget).
+NAME="${1:-recheck}"; Q="${2:-}"; WQ="${3:-}"; GEN="${4:-}"; PRB="${5:-}"
+[ -n "$WQ" ] && [ -n "$GEN" ] && [ -n "$PRB" ] || { echo "recheck-service: нужны очередь, очередь наблюдения и две метки" >&2; exit 2; }
+DIR="${STEER_PLUGIN_DIR:?служба запускается steer (нет STEER_PLUGIN_DIR)}"
+CONF="${STEER_PLUGIN_CONF:?нет STEER_PLUGIN_CONF}"
+RUN="${STEER_PLUGIN_STATE:?нет STEER_PLUGIN_STATE}"
+ENGINE="${RECHECK_ENGINE:-$DIR/bin/steer-dpi-live}"
+WANEVENT="${RECHECK_WAN_EVENT:-$DIR/bin/recheck-wan-event}"
+SETTINGS="$CONF/settings.json"
+STATUS="$RUN/recheck.status.json"
+LOG="$RUN/events.log"
+TICK="${RECHECK_TICK:-5}"
+SYSMOD="${RECHECK_SYS_MODULE:-/sys/module}"     # швы для стенда: каталог модулей и счётчики conntrack
+NFACCT="${RECHECK_NFACCT:-/proc/sys/net/netfilter/nf_conntrack_acct}"
+VERSION="${STEER_PLUGIN_VERSION:-}"
+EPID=0 STARTS=0 WANDEV="" FORGET=0 WANCHK=0
+
+[ -n "${STEER_EVENT_FD:-}" ] && eval "exec 9>&$STEER_EVENT_FD"
+ev() { [ -n "${STEER_EVENT_FD:-}" ] && printf '%s\n' "$1" >&9; return 0; }
+
+umask 077
+mkdir -p "$RUN" "$CONF" || exit 2
+ev "{\"ev\":\"hello\",\"api\":\"1.2\",\"ver\":\"$VERSION\",\"mod\":\"recheck\"}"
+
+setting() {  # КЛЮЧ УМОЛЧАНИЕ
+    _v=""
+    [ -r "$SETTINGS" ] && _v="$(jsonfilter -i "$SETTINGS" -e "@.$1" 2>/dev/null)"
+    printf '%s' "${_v:-$2}"
+}
+
+wan_logical() {
+    _l="$(setting wan wan)"
+    case "$_l" in ''|*[!A-Za-z0-9_-]*) _l=wan ;; esac
+    printf '%s' "$_l"
+}
+
+# Устройство WAN: от netifd, иначе маршрут по умолчанию (IPv4, затем IPv6).
+wan_dev() {
+    _d="$(ubus -t 2 call "network.interface.$(wan_logical)" status 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)"
+    [ -n "$_d" ] || _d="$(ip -4 route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)"
+    [ -n "$_d" ] || _d="$(ip -6 route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)"
+    printf '%s' "$_d"
+}
+
+state_file() {
+    if [ "$(setting persist false)" = true ]; then printf '%s' "$CONF/cache.state"; else printf '%s' "$RUN/cache.state"; fi
+}
+
+wan_event() {  # ПЕРЕНАСТРОИТЬ путь движка по состоянию WAN
+    echo "$Q $(wan_logical)" > "$RUN/wan.map"
+    ACTION=ifup INTERFACE="$(wan_logical)" RECHECK_WAN_MAP="$RUN/wan.map" RECHECK_RUNTIME_DIR="$RUN" \
+        RECHECK_QUEUE_MIN="$Q" RECHECK_QUEUE_MAX="$Q" "$WANEVENT" >/dev/null 2>&1
+}
+
+write_status() {
+    _sf="$(state_file)"; _n=0; _c=0
+    if [ -s "$_sf" ]; then
+        set -- $(awk '$1 == "E" { n++; if ($3 == 1) c++ } END { printf "%d %d", n, c }' "$_sf")
+        _n="${1:-0}"; _c="${2:-0}"
+    fi
+    printf '{"pid":%s,"version":"%s","running":true,"starts":%s,"wan":"%s","wan_dev":"%s","queue":%s,"watch_queue":%s,"strict":%s,"persist":%s,"learned":%s,"confirmed":%s}\n' \
+        "$$" "$VERSION" "$STARTS" "$(wan_logical)" "$WANDEV" "$Q" "$WQ" "$(setting strict false)" \
+        "$(setting persist false)" "$_n" "$_c" > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
+    ev '{"ev":"state"}'
+}
+
+engine_start() {
+    touch "$RUN/applied"       # раньше чтения настроек: правка, пришедшая во время запуска, перезапустит движок
+    WANDEV="$(wan_dev)"
+    if [ -z "$WANDEV" ]; then
+        ev '{"ev":"down","why":"нет подключения к интернету"}'
+        return 1
+    fi
+    [ -d "$SYSMOD/nf_conntrack_netlink" ] || modprobe nf_conntrack_netlink 2>/dev/null
+    if [ ! -d "$SYSMOD/nf_conntrack_netlink" ]; then
+        ev '{"ev":"down","why":"нужен пакет kmod-nf-conntrack-netlink"}'
+        echo "recheck: нет модуля nf_conntrack_netlink — поставьте kmod-nf-conntrack-netlink" >&2
+        return 1
+    fi
+    # Счётчики пакетов соединения нужны правилам.
+    echo 1 > "$NFACCT" 2>/dev/null
+    wan_event
+    [ -f "$RUN/$Q.path" ] || echo "1 $WANDEV" > "$RUN/$Q.path"
+    set -- --queue "$Q" --watch-queue "$WQ" --skip-mark "$GEN" --probe-mark "$PRB" --interface "$WANDEV" \
+        --state "$(state_file)" --learn --path-file "$RUN/$Q.path" --pid-file "$RUN/$Q.pid"
+    [ -r /etc/ssl/certs/ca-certificates.crt ] && set -- "$@" --ca /etc/ssl/certs/ca-certificates.crt
+    [ "$(setting strict false)" = true ] && set -- "$@" --strict
+    for _k in cache family predict; do
+        _x="$(setting "${_k}_limit" 0)"
+        case "$_x" in ''|*[!0-9]*|0) ;; *) [ "$_x" -ge 16 ] && set -- "$@" "--$_k-limit" "$_x" ;; esac
+    done
+    _c=0
+    for _r in $(setting probe_resources ""); do
+        [ "$_c" -lt 4 ] || break
+        set -- "$@" --probe-resource "$_r"; _c=$((_c + 1))
+    done
+    [ "$_c" -gt 0 ] && [ "$(setting watch_active false)" = true ] && set -- "$@" --watch-active
+    : > "$LOG"
+    "$ENGINE" "$@" >> "$LOG" 2>&1 &
+    EPID=$!
+    STARTS=$((STARTS + 1))
+    _i=0
+    while [ "$_i" -lt 50 ]; do
+        grep -q '^event=ready' "$LOG" 2>/dev/null && return 0
+        kill -0 "$EPID" 2>/dev/null || break
+        sleep 0.2
+        _i=$((_i + 1))
+    done
+    kill -0 "$EPID" 2>/dev/null && return 0     # поднимается дольше обычного — следим дальше
+    ev "{\"ev\":\"down\",\"why\":\"движок не запустился\"}"
+    tail -n 3 "$LOG" >&2
+    EPID=0
+    return 1
+}
+
+engine_stop() {
+    [ "$EPID" -gt 0 ] || return 0
+    kill "$EPID" 2>/dev/null
+    _i=0
+    while [ "$_i" -lt 50 ] && kill -0 "$EPID" 2>/dev/null; do sleep 0.1; _i=$((_i + 1)); done
+    kill -9 "$EPID" 2>/dev/null
+    wait "$EPID" 2>/dev/null
+    EPID=0
+}
+
+shutdown() { engine_stop; rm -f "$STATUS"; exit 0; }
+trap shutdown TERM INT
+trap 'WANCHK=1' USR1
+trap 'FORGET=1' USR2
+
+# Событие сети: netifd сообщает о смене интерфейса — просыпается главный цикл.
+if command -v ubus >/dev/null 2>&1; then
+    MAIN=$$
+    ( ubus listen network.interface 2>/dev/null | while read -r _; do kill -USR1 "$MAIN" 2>/dev/null || break; done ) &
+fi
+
+while :; do
+    engine_start || { engine_stop; sleep 5 & wait $!; exit 1; }
+    ev '{"ev":"ready"}'
+    write_status
+    while :; do
+        sleep "$TICK" & wait $!
+        if ! kill -0 "$EPID" 2>/dev/null; then
+            ev '{"ev":"down","why":"движок остановился"}'
+            tail -n 3 "$LOG" >&2
+            exit 1
+        fi
+        [ "$FORGET" = 1 ] && break
+        [ "$SETTINGS" -nt "$RUN/applied" ] && break
+        if [ "$WANCHK" = 1 ]; then
+            WANCHK=0
+            _d="$(wan_dev)"
+            if [ -n "$_d" ] && [ "$_d" != "$WANDEV" ]; then break; fi
+            [ -n "$_d" ] && wan_event
+        fi
+        _sf="$(state_file)"
+        [ -f "$_sf" ] && [ "$_sf" -nt "$STATUS" ] && write_status
+        [ "$(wc -c < "$LOG" 2>/dev/null || echo 0)" -gt 1048576 ] && { tail -n 500 "$LOG" > "$LOG.tmp" && cat "$LOG.tmp" > "$LOG"; rm -f "$LOG.tmp"; }
+    done
+    engine_stop
+    if [ "$FORGET" = 1 ]; then
+        FORGET=0
+        rm -f "$RUN/cache.state" "$CONF/cache.state"
+    fi
+done

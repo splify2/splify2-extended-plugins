@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "id": "recheck",
+  "version": "0.3.0",
+  "type": "plugin",
+  "name": "ReCheck",
+  "description": "Обход блокировок по содержимому трафика: распознаёт блокировку сам и подбирает обход",
+  "license": "LicenseRef-recheck-proprietary",
+  "homepage": "https://github.com/splify2/splify2",
+  "compat": {
+    "steer-api": "^1.2",
+    "splify2-api": "^1.0"
+  },
+  "arch": [
+    "aarch64_cortex-a53",
+    "x86_64"
+  ],
+  "requires": {
+    "system": [
+      "kmod-nfnetlink-queue",
+      "kmod-nft-queue",
+      "kmod-nf-conntrack-netlink",
+      "ca-bundle"
+    ],
+    "kernel": [
+      "/sys/module/nfnetlink_queue",
+      "/sys/module/nf_conntrack_netlink"
+    ]
+  },
+  "permissions": [
+    "net.admin",
+    "nft",
+    "http",
+    "system-packages"
+  ],
+  "resources": {
+    "queues": 2,
+    "mark_bits": 2
+  },
+  "steer": {
+    "services": [
+      {
+        "name": "recheck",
+        "prog": "bin/recheck-service",
+        "argv": [
+          "recheck",
+          "{queue0}",
+          "{queue1}",
+          "{mark0}",
+          "{mark1}"
+        ],
+        "timeout_s": 10
+      }
+    ],
+    "nft": [
+      "nft/recheck.nft"
+    ]
+  },
+  "rpc": {
+    "prog": "rpc/recheck",
+    "methods": {
+      "status": {
+        "access": "read",
+        "timeout_s": 15
+      },
+      "forget": {
+        "access": "write",
+        "timeout_s": 30
+      }
+    }
+  },
+  "splify2": {
+    "settings": {
+      "schema": "settings.schema.json"
+    }
+  },
+  "i18n": {
+    "languages": [
+      "ru",
+      "en"
+    ]
+  }
+}

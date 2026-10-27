@@ -1,0 +1,79 @@
+#!/bin/sh
+# Путь движка recheck по состоянию WAN: файл пути и SIGHUP только своему процессу (PID и время старта). Трафик и
+# маршруты не трогает. Карта «очередь интерфейс» — файл RECHECK_WAN_MAP (его пишет служба recheck).
+set -eu
+case ${ACTION:-} in ifup|ifupdate|ifdown) ;; *) exit 0;; esac
+logical=${INTERFACE:-}
+case "$logical" in ''|*[!a-zA-Z0-9_-]*) exit 0;; esac
+map=${RECHECK_WAN_MAP:?служба задаёт карту очередь-интерфейс}
+runtime=${RECHECK_RUNTIME_DIR:-/var/run/recheck}
+sysnet=${RECHECK_SYS_NET:-/sys/class/net}
+# Очередь выдало ядро: служба задаёт диапазон из одной очереди.
+qmin=${RECHECK_QUEUE_MIN:-9000}
+qmax=${RECHECK_QUEUE_MAX:-9508}
+case "$qmin$qmax" in *[!0-9]*|'') exit 2;; esac
+[ -f "$map" ] && [ ! -L "$map" ] || exit 0
+[ "$(wc -c < "$map")" -le 4096 ] || exit 2
+awk -v qmin="$qmin" -v qmax="$qmax" '
+ /^[[:space:]]*(#|$)/ {next}
+ {if(NF!=2 || length($0)>128 || $1!~/^[1-9][0-9]*$/ || $1<qmin || $1>qmax || $2!~/^[A-Za-z0-9_-]+$/ || seen[$1]++ || ++count>16) exit 1}
+' "$map" || exit 2
+umask 077
+mkdir -p "$runtime"
+[ -d "$runtime" ] && [ ! -L "$runtime" ] || exit 2
+update_queue() (
+ queue=$1
+ lock="$runtime/$queue.lock"
+ [ ! -L "$lock" ] || exit 2
+ exec 9>"$lock"
+ flock -x 9
+ status=$(ubus -t 2 call "network.interface.$logical" status | head -c 8193)
+ [ "${#status}" -le 8192 ] || exit 2
+ up=$(jsonfilter -s "$status" -e '@.up')
+ device=-;index=0;addresses='';gateways=''
+ if [ "$up" = true ]; then
+  device=$(jsonfilter -s "$status" -e '@.l3_device')
+  case "$device" in ''|*[!a-zA-Z0-9_.:-]*) exit 2;; esac
+  [ "${#device}" -le 15 ] || exit 2
+  index=$(cat "$sysnet/$device/ifindex")
+  case "$index" in ''|*[!0-9]*) exit 2;; esac
+  addresses=$(jsonfilter -s "$status" -e '@["ipv4-address"][*].address' -e '@["ipv6-address"][*].address' || true)
+  gateways=$(jsonfilter -s "$status" -e '@.route[*].nexthop' || true)
+  [ "${#addresses}" -le 2048 ] && [ "${#gateways}" -le 2048 ] || exit 2
+ fi
+ # Epoch is a compact path discriminator, not proof that DPI behavior is stable.
+ hash=$(printf '%s\n' "$logical" "$up" "$device" "$index" "$addresses" "$gateways" | sha256sum)
+ hash=${hash%% *};prefix=$(printf '%.7s' "$hash")
+ case "$prefix" in *[!0-9a-f]*|'') exit 2;; esac
+ epoch=$((0x$prefix));[ "$epoch" != 0 ] || epoch=1
+ path="$runtime/$queue.path"
+ old='';if [ -f "$path" ] && [ ! -L "$path" ] && [ "$(wc -c < "$path")" -le 32 ]; then old=$(cat "$path");fi
+ [ "$old" != "$epoch $device" ] || exit 0
+ temp="$runtime/$queue.path.tmp.$$"
+ (set -C; printf '%s %s\n' "$epoch" "$device" > "$temp") || exit 2
+ mv -f "$temp" "$path"
+ pidfile="$runtime/$queue.pid"
+ [ -f "$pidfile" ] && [ ! -L "$pidfile" ] && [ "$(wc -c < "$pidfile")" -le 96 ] || exit 0
+ read -r pid birth extra < "$pidfile" || exit 0
+ case "$pid:$birth" in *[!0-9:]*|:*|*:) exit 0;; esac
+ [ -z "${extra:-}" ] && [ "$pid" -gt 1 ] || exit 0
+ [ "$(readlink "/proc/$pid/ns/net" 2>/dev/null)" = "$(readlink /proc/self/ns/net)" ] || exit 0
+ actual=$(awk '{sub(/^.*\) /, ""); print $20}' "/proc/$pid/stat" 2>/dev/null) || exit 0
+ [ "$actual" = "$birth" ] || exit 0
+ # Check argv tokens, never a substring that could match a different queue.
+ tr '\000' '\n' < "/proc/$pid/cmdline" | awk -v q="$queue" -v p="$path" '
+  NR==1 {n=split($0,a,"/"); engine=(a[n]=="steer-dpi-live")}
+  previous=="--queue" {queue_value=$0}
+  previous=="--path-file" {path_value=$0}
+  {previous=$0}
+  END {exit !(engine && queue_value==q && path_value==p)}' || exit 0
+ kill -HUP "$pid" 2>/dev/null || true
+)
+count=0
+while read -r queue name extra; do
+ case "$queue" in ''|\#*) continue;; *[!0-9]*|0*) exit 2;; esac
+ count=$((count+1));[ "$count" -le 16 ] || exit 2
+ [ -z "${extra:-}" ] && [ "$queue" -ge "$qmin" ] && [ "$queue" -le "$qmax" ] || exit 2
+ [ "$name" = "$logical" ] || continue
+ update_queue "$queue"
+done < "$map"

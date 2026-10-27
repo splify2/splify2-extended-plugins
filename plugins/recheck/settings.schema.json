@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReCheck",
+  "type": "object",
+  "properties": {
+    "wan": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "title": "Internet interface",
+      "description": "The network interface (as named in the network settings) through which traffic goes out to the internet directly.",
+      "default": "wan"
+    },
+    "strict": {
+      "type": "boolean",
+      "title": "Strict mode",
+      "description": "Off - when ReCheck is overloaded, packets pass on without processing. On - such packets are dropped, so nothing slips past the bypass.",
+      "default": false
+    },
+    "persist": {
+      "type": "boolean",
+      "title": "Keep what was learned on flash",
+      "description": "Off - what ReCheck has learned is kept in memory and lost on reboot. On - it is written to flash, so after a reboot the working bypass methods are already known.",
+      "default": false
+    },
+    "watch_active": {
+      "type": "boolean",
+      "title": "Check downloads",
+      "description": "ReCheck also notices when a download from a watched site stalls. It needs at least one check address.",
+      "default": false
+    },
+    "probe_resources": {
+      "type": "string",
+      "pattern": "^(https://[^ /]+/[^ #]*( https://[^ /]+/[^ #]*){0,3})?$",
+      "title": "Check addresses",
+      "description": "Up to four addresses of files on the sites to watch, https://site/path, separated by spaces. ReCheck uses them to see that downloads from these sites keep going.",
+      "default": ""
+    },
+    "cache_limit": {
+      "type": "integer",
+      "minimum": 0,
+      "title": "Site limit",
+      "description": "How many sites ReCheck remembers. 0 - no limit; otherwise at least 16, the least recently used are forgotten first.",
+      "default": 0
+    },
+    "family_limit": {
+      "type": "integer",
+      "minimum": 0,
+      "title": "Site family limit",
+      "description": "How many groups of related sites ReCheck remembers. 0 - no limit; otherwise at least 16.",
+      "default": 0
+    },
+    "predict_limit": {
+      "type": "integer",
+      "minimum": 0,
+      "title": "Prediction limit",
+      "description": "How many predictions about new sites ReCheck remembers. 0 - no limit; otherwise at least 16.",
+      "default": 0
+    }
+  },
+  "additionalProperties": false
+}

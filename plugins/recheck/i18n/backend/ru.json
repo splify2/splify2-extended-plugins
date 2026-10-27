@@ -1,0 +1,5 @@
+{
+  "recheck.not_running": "ReCheck не работает",
+  "recheck.forget_timeout": "ReCheck не перезапустился вовремя",
+  "recheck.unknown_method": "Неизвестный метод {method}"
+}

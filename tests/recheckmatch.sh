@@ -107,10 +107,16 @@ cat > "$tmp/stub/ubus" <<'U'
 [ "$1" = call ] && [ "$2" = network.interface.wan ] && { echo '{"up":true,"l3_device":"wan0"}'; exit 0; }
 exit 1
 U
-chmod +x "$tmp/stub/jsonfilter" "$tmp/stub/ubus"
+# nft службы: команды — в журнал (набор @strict строгого режима); настоящий nft стенда проверяет набор правил выше.
+cat > "$tmp/stub/nft" <<N
+#!/bin/sh
+echo "\$*" >> "$tmp/nft.log"
+N
+chmod +x "$tmp/stub/jsonfilter" "$tmp/stub/ubus" "$tmp/stub/nft"
 PATH="$tmp/stub:$PATH"; export PATH
 RECHECK_SYS_MODULE="$tmp/sysmod" RECHECK_NFACCT="$tmp/acct" RECHECK_SYS_NET="$tmp/sysnet" RECHECK_TICK=1
-export RECHECK_SYS_MODULE RECHECK_NFACCT RECHECK_SYS_NET RECHECK_TICK
+RECHECK_NFT="$tmp/stub/nft"
+export RECHECK_SYS_MODULE RECHECK_NFACCT RECHECK_SYS_NET RECHECK_TICK RECHECK_NFT
 STEER_PLUGINS_ROOT="$ROOT"; STEER_PLUGINS_ETC="$ETC"; export STEER_PLUGINS_ROOT STEER_PLUGINS_ETC
 CONFD="$ETC/conf/recheck"
 
@@ -125,6 +131,9 @@ has "  очередь первых пакетов — выданная" "$rs" "c
 has "  очередь наблюдения — выданная" "$rs" "queue flags bypass to $Q1"
 has "  по WAN steer (набор wan_dev)" "$rs" "oifname @wan_dev"
 has "  ответы из WAN в сеть (слот forward)" "$rs" "iifname @wan_dev oifname @lan_dev"
+has "  строгий режим: набор плагина" "$rs" "set p_recheck_strict"
+has "  строгий режим: очередь без bypass через @p_recheck_strict" "$rs" "oifname @p_recheck_strict ip daddr != @p_recheck_private4 meta l4proto { tcp, udp } ct direction original ct original packets <= 12 counter queue to $Q0"
+has "  строгий режим: ответы из WAN" "$rs" "iifname @p_recheck_strict oifname @lan_dev"
 has "  свои пакеты движка снимаются с conntrack до него" "$rs" "notrack"
 if command -v unshare >/dev/null 2>&1 && command -v nft >/dev/null 2>&1 && unshare -rn true 2>/dev/null; then
     printf '%s\n' "$rs" > "$tmp/rules.nft"
@@ -175,6 +184,7 @@ wait_for '[ "$(starts)" = 2 ]' 15
 check "правка настроек: движок перезапущен" "2" "$(starts)"
 eng="$(tail -1 "$tmp/engine.log")"
 has "  strict — флаг движка" "$eng" "--strict"
+has "  strict — устройство WAN в наборе @strict" "$(cat "$tmp/nft.log" 2>/dev/null)" "add element inet steer p_recheck_strict { \"wan0\" }"
 has "  persist: память на флеше (каталог настроек)" "$eng" "--state $CONFD/cache.state"
 has "  предел 64 передан" "$eng" "--family-limit 64"
 hasnt "  предел меньше 16 не передан" "$eng" "--cache-limit"

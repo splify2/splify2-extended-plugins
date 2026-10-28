@@ -13,7 +13,7 @@
   "How many groups of related sites ReCheck remembers. 0 - no limit; otherwise at least 16.": "Сколько групп похожих сайтов помнит ReCheck. 0 — без предела, иначе не меньше 16.",
   "Prediction limit": "Предел предсказаний",
   "How many predictions about new sites ReCheck remembers. 0 - no limit; otherwise at least 16.": "Сколько предсказаний о новых сайтах помнит ReCheck. 0 — без предела, иначе не меньше 16.",
-  "Off - when ReCheck is overloaded, packets pass on without processing. On - such packets are dropped, so nothing slips past the bypass.": "Выключено — при перегрузке ReCheck пакеты идут дальше без обработки. Включено — такие пакеты отбрасываются, и ничто не проходит мимо обхода.",
+  "Off - when ReCheck is overloaded or stopped, packets pass on without processing. On - such packets are dropped, so nothing slips past the bypass.": "Выключено — при перегрузке или остановке ReCheck пакеты идут дальше без обработки. Включено — такие пакеты отбрасываются, и ничто не проходит мимо обхода.",
   "ReCheck also notices when a download from a watched site stalls. It needs at least one check address.": "ReCheck замечает и когда загрузка с отслеживаемого сайта встала. Нужен хотя бы один адрес проверки.",
   "Up to four addresses of files on the sites to watch, https://site/path, separated by spaces. ReCheck uses them to see that downloads from these sites keep going.": "До четырёх адресов файлов на отслеживаемых сайтах, https://сайт/путь, через пробел. По ним ReCheck видит, что загрузки с этих сайтов идут."
 }

@@ -13,7 +13,7 @@
     "strict": {
       "type": "boolean",
       "title": "Strict mode",
-      "description": "Off - when ReCheck is overloaded, packets pass on without processing. On - such packets are dropped, so nothing slips past the bypass.",
+      "description": "Off - when ReCheck is overloaded or stopped, packets pass on without processing. On - such packets are dropped, so nothing slips past the bypass.",
       "default": false
     },
     "persist": {

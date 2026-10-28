@@ -2,7 +2,12 @@
 # из сети и 8 ответов — в очередь {queue0}; у TCP дальше до 65-го и поздние FIN/RST — в наблюдение {queue1};
 # пробы движка и их ответы — туда же. Пакеты, ушедшие в каналы steer ({steer_mask}), не трогаются; свои
 # порождённые пакеты движок метит {mark0} (снимаются с conntrack), пробы — {mark1}. Очередь с bypass: нет
-# движка или очередь полна — пакет идёт дальше. IPv4 и IPv6 — парами строк.
+# движка — пакет идёт дальше. Строгий режим: служба кладёт устройства WAN в @strict, и трафик через них встаёт в
+# очередь без bypass — остановленный или упавший движок режет его (ядро Linux роняет пакет очереди без слушателя),
+# а не пропускает без обхода. IPv4 и IPv6 — парами строк.
+set strict {
+  type ifname
+}
 set private4 {
   type ipv4_addr; flags interval
   elements = { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/3 }
@@ -21,22 +26,34 @@ chain postrouting-post {
   oifname @wan_dev meta mark & {mark1} != 0 ip daddr != @private4 meta l4proto { tcp, udp } ct original packets <= 12 counter queue flags bypass to {queue0}
   oifname @wan_dev meta mark & {mark1} != 0 ip6 daddr != @private6 meta l4proto { tcp, udp } ct original packets <= 12 counter queue flags bypass to {queue0}
   meta mark & {steer_mask} != 0 return
+  iifname @lan_dev oifname @strict ip daddr != @private4 meta l4proto { tcp, udp } ct direction original ct original packets <= 12 counter queue to {queue0}
   iifname @lan_dev oifname @wan_dev ip daddr != @private4 meta l4proto { tcp, udp } ct direction original ct original packets <= 12 counter queue flags bypass to {queue0}
+  iifname @lan_dev oifname @strict ip6 daddr != @private6 meta l4proto { tcp, udp } ct direction original ct original packets <= 12 counter queue to {queue0}
   iifname @lan_dev oifname @wan_dev ip6 daddr != @private6 meta l4proto { tcp, udp } ct direction original ct original packets <= 12 counter queue flags bypass to {queue0}
   meta mark & {mark1} != 0 return
   ct mark & {mark1} != 0 return
+  iifname @lan_dev oifname @strict ip daddr != @private4 meta l4proto tcp ct direction original ct original packets > 12 ct original packets <= 65 counter queue to {queue1}
   iifname @lan_dev oifname @wan_dev ip daddr != @private4 meta l4proto tcp ct direction original ct original packets > 12 ct original packets <= 65 counter queue flags bypass to {queue1}
+  iifname @lan_dev oifname @strict ip6 daddr != @private6 meta l4proto tcp ct direction original ct original packets > 12 ct original packets <= 65 counter queue to {queue1}
   iifname @lan_dev oifname @wan_dev ip6 daddr != @private6 meta l4proto tcp ct direction original ct original packets > 12 ct original packets <= 65 counter queue flags bypass to {queue1}
+  iifname @lan_dev oifname @strict ip daddr != @private4 meta l4proto tcp ct direction original ct original packets > 65 tcp flags & (fin | rst) != 0 counter queue to {queue1}
   iifname @lan_dev oifname @wan_dev ip daddr != @private4 meta l4proto tcp ct direction original ct original packets > 65 tcp flags & (fin | rst) != 0 counter queue flags bypass to {queue1}
+  iifname @lan_dev oifname @strict ip6 daddr != @private6 meta l4proto tcp ct direction original ct original packets > 65 tcp flags & (fin | rst) != 0 counter queue to {queue1}
   iifname @lan_dev oifname @wan_dev ip6 daddr != @private6 meta l4proto tcp ct direction original ct original packets > 65 tcp flags & (fin | rst) != 0 counter queue flags bypass to {queue1}
 }
 chain forward {
   meta mark & {steer_mask} != 0 return
+  iifname @strict oifname @lan_dev ip saddr != @private4 meta l4proto { tcp, udp } ct direction reply ct reply packets <= 8 counter queue to {queue0}
   iifname @wan_dev oifname @lan_dev ip saddr != @private4 meta l4proto { tcp, udp } ct direction reply ct reply packets <= 8 counter queue flags bypass to {queue0}
+  iifname @strict oifname @lan_dev ip6 saddr != @private6 meta l4proto { tcp, udp } ct direction reply ct reply packets <= 8 counter queue to {queue0}
   iifname @wan_dev oifname @lan_dev ip6 saddr != @private6 meta l4proto { tcp, udp } ct direction reply ct reply packets <= 8 counter queue flags bypass to {queue0}
+  iifname @strict oifname @lan_dev ip saddr != @private4 meta l4proto tcp ct direction reply ct reply packets > 8 ct reply packets <= 65 counter queue to {queue1}
   iifname @wan_dev oifname @lan_dev ip saddr != @private4 meta l4proto tcp ct direction reply ct reply packets > 8 ct reply packets <= 65 counter queue flags bypass to {queue1}
+  iifname @strict oifname @lan_dev ip6 saddr != @private6 meta l4proto tcp ct direction reply ct reply packets > 8 ct reply packets <= 65 counter queue to {queue1}
   iifname @wan_dev oifname @lan_dev ip6 saddr != @private6 meta l4proto tcp ct direction reply ct reply packets > 8 ct reply packets <= 65 counter queue flags bypass to {queue1}
+  iifname @strict oifname @lan_dev ip saddr != @private4 meta l4proto tcp ct direction reply ct reply packets > 65 tcp flags & (fin | rst) != 0 counter queue to {queue1}
   iifname @wan_dev oifname @lan_dev ip saddr != @private4 meta l4proto tcp ct direction reply ct reply packets > 65 tcp flags & (fin | rst) != 0 counter queue flags bypass to {queue1}
+  iifname @strict oifname @lan_dev ip6 saddr != @private6 meta l4proto tcp ct direction reply ct reply packets > 65 tcp flags & (fin | rst) != 0 counter queue to {queue1}
   iifname @wan_dev oifname @lan_dev ip6 saddr != @private6 meta l4proto tcp ct direction reply ct reply packets > 65 tcp flags & (fin | rst) != 0 counter queue flags bypass to {queue1}
 }
 chain input {

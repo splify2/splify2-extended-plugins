@@ -25,7 +25,9 @@ TICK="${RECHECK_TICK:-5}"
 SYSMOD="${RECHECK_SYS_MODULE:-/sys/module}"     # швы для стенда: каталог модулей и счётчики conntrack
 NFACCT="${RECHECK_NFACCT:-/proc/sys/net/netfilter/nf_conntrack_acct}"
 VERSION="${STEER_PLUGIN_VERSION:-}"
-EPID=0 STARTS=0 WANDEV="" FORGET=0 WANCHK=0
+NFT="${RECHECK_NFT:-nft}"
+TABLE="${STEER_NFT_TABLE:-steer}"
+EPID=0 STARTS=0 WANDEV="" FORGET=0 WANCHK=0 STRICTDEV=""
 
 [ -n "${STEER_EVENT_FD:-}" ] && eval "exec 9>&$STEER_EVENT_FD"
 ev() { [ -n "${STEER_EVENT_FD:-}" ] && printf '%s\n' "$1" >&9; return 0; }
@@ -76,6 +78,22 @@ write_status() {
     ev '{"ev":"state"}'
 }
 
+# Строгий режим: устройство WAN в наборе @strict переводит правила nft на очередь без bypass — пакет без
+# слушающего движка ядро Linux роняет. Набор живёт в таблице steer: reload ядра печатает его пустым, поэтому
+# служба подтверждает элемент каждый такт; при остановке службы элемент остаётся — упавший движок режет трафик.
+strict_sync() {  # УСТРОЙСТВО (пусто — строгий режим выключен)
+    if [ -n "$STRICTDEV" ] && [ "$STRICTDEV" != "$1" ]; then
+        "$NFT" delete element inet "$TABLE" p_recheck_strict "{ \"$STRICTDEV\" }" 2>/dev/null
+    fi
+    STRICTDEV="$1"
+    if [ -z "$1" ]; then  # выключен — убрать и то, что оставил прежний запуск службы
+        "$NFT" flush set inet "$TABLE" p_recheck_strict 2>/dev/null
+        return 0
+    fi
+    "$NFT" add element inet "$TABLE" p_recheck_strict "{ \"$1\" }" 2>/dev/null ||
+        echo "recheck: строгий режим не включён — нет набора p_recheck_strict" >&2
+}
+
 engine_start() {
     touch "$RUN/applied"       # раньше чтения настроек: правка, пришедшая во время запуска, перезапустит движок
     WANDEV="$(wan_dev)"
@@ -89,6 +107,7 @@ engine_start() {
         echo "recheck: нет модуля nf_conntrack_netlink — поставьте kmod-nf-conntrack-netlink" >&2
         return 1
     fi
+    if [ "$(setting strict false)" = true ]; then strict_sync "$WANDEV"; else strict_sync ""; fi
     # Счётчики пакетов соединения нужны правилам.
     echo 1 > "$NFACCT" 2>/dev/null
     wan_event
@@ -165,6 +184,7 @@ while :; do
             if [ -n "$_d" ] && [ "$_d" != "$WANDEV" ]; then break; fi
             [ -n "$_d" ] && wan_event
         fi
+        [ -n "$STRICTDEV" ] && strict_sync "$STRICTDEV"
         _sf="$(state_file)"
         [ -f "$_sf" ] && [ "$_sf" -nt "$STATUS" ] && write_status
         [ "$(wc -c < "$LOG" 2>/dev/null || echo 0)" -gt 1048576 ] && { tail -n 500 "$LOG" > "$LOG.tmp" && cat "$LOG.tmp" > "$LOG"; rm -f "$LOG.tmp"; }

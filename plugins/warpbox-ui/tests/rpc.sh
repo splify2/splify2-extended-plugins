@@ -26,7 +26,9 @@ cat > "$W/steer" <<'S'
 # ядро-заглушка: warp-scan печатает точки; группа "bad" — не отвечает
 [ "$1" = warp-scan ] || exit 2
 [ "$2" = bad ] && { echo "ядро не ответило" >&2; exit 1; }
-sleep 1
+# Подбор идёт, пока стенд не откроет ворота (файл scan-go): «идёт» и «второй запуск не стартует» проверяются на идущем
+# подборе при любой нагрузке, а не в окне одной секунды. Без ворот — не дольше 10 с.
+i=0; while [ ! -e "$S2_SANDBOX/scan-go" ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
 printf '{"ok":true,"points":[{"ip":"162.159.192.1","port":2408,"class":0,"loss":0,"rtt":31,"colo":"AMS","cc":"NL"}],"filtered":2}\n'
 S
 chmod 755 "$W/steer"
@@ -59,6 +61,7 @@ o="$(call scan_state '{"group":"cf"}')"
 check "  идёт" "True" "$(j "$o" 'd["running"]')"
 o="$(call scan '{"group":"cf"}')"
 check "  второй запуск не стартует" "True" "$(j "$o" 'd["running"]')"
+: > "$W/scan-go"
 i=0; while [ $i -lt 30 ]; do
     [ "$(j "$(call scan_state '{"group":"cf"}')" 'd["running"]')" = False ] && break
     sleep 0.2; i=$((i + 1))

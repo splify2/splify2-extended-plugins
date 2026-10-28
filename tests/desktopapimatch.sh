@@ -30,6 +30,15 @@ sh "$SDK/tests/compat/run.sh" "$PLUGIN" 1.2 >"$tmp/compat" 2>&1; check "compat �
 check "шлюз исполняемый, в нём нет русских текстов вне комментариев" "yes;0" \
     "$([ -x "$PLUGIN/cgi/splify2-api" ] && echo yes || echo no);$(python3 -c 'import re,sys; print(sum(1 for l in open(sys.argv[1], encoding="utf-8") if not l.lstrip().startswith("//") and re.search("[А-Яа-яЁё]", l)))' "$PLUGIN/cgi/splify2-api")"
 
+# Прежние проверки маршрутов шлюза (по тексту; живой ответ — раздел 3).
+API="$PLUGIN/cgi/splify2-api"
+check "шлюз: маршрут /v1/plugin/<id>/<метод> ведёт в plugin_call" "yes;yes" \
+    "$(grep -q 'v1\\/plugin\\/(\[a-z0-9\]\[a-z0-9-\]\*)\\/(\[a-z\]\[a-z0-9_\]\*)\$' "$API" && echo yes || echo no);$(grep -q "call(me, 'plugin_call'" "$API" && echo yes || echo no)"
+check "  отказы плагинной части — статусами HTTP (все слова code)" "yes" \
+    "$(for c in bad_request not_installed no_method disabled unavailable busy timeout failed; do grep -q "$c: [0-9]" "$API" || echo "нет $c"; done | grep -q . && echo no || echo yes)"
+check "  маршруты /v1/call, /v1/batch, /v1/jobs на месте" "3" \
+    "$(grep -c "path == '/v1/batch'\|v1\\\\/call\|v1\\\\/jobs" "$API")"
+
 # ---- 2. словари ----------------------------------------------------------------------------------------------------------
 python3 - "$PLUGIN" >"$tmp/dict" <<'PY'
 import json, re, sys

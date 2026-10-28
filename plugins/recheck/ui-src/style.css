@@ -1,0 +1,6 @@
+.recheck-ui { display: grid; gap: 12px; }
+.recheck-ui h4 { margin: 12px 0 4px; font-size: 13px; font-weight: 600; }
+.recheck-ui__muted { color: var(--muted-foreground, #888); }
+.recheck-ui__list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.recheck-ui__list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 13px; }
+.recheck-ui__list li > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

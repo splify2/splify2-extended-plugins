@@ -27,6 +27,9 @@ for arch in $ARCHES; do
     [ -x "$eng" ] || { echo "нет движка для $arch: $eng (в репозитории recheck: RECHECK_ARCH=$arch sh build.sh)" >&2; exit 1; }
     rm -rf "$stage/recheck"
     cp -r "$REPO/plugins/recheck" "$stage/recheck"
+    # Интерфейс панели (ui-src) собирает `s2p build` командой из s2p.json: зависимости npm — из каталога плагина.
+    rm -rf "$stage/recheck/node_modules" "$stage/recheck/ui"
+    [ -d "$REPO/plugins/recheck/node_modules" ] && ln -s "$(readlink -f "$REPO/plugins/recheck/node_modules")" "$stage/recheck/node_modules"
     cp "$eng" "$stage/recheck/bin/steer-dpi-live"
     chmod 0755 "$stage/recheck/bin/steer-dpi-live"
     "$S2P" lint --official "$stage/recheck"

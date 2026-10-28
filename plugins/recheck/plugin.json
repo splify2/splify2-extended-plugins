@@ -9,7 +9,8 @@
   "homepage": "https://github.com/splify2/splify2",
   "compat": {
     "steer-api": "^1.2",
-    "splify2-api": "^1.0"
+    "splify2-api": "^1.0",
+    "host-api": "^1.0"
   },
   "arch": [
     "aarch64_cortex-a53",
@@ -68,6 +69,12 @@
         "timeout_s": 30
       }
     }
+  },
+  "ui": {
+    "entry": "ui/index.js",
+    "css": [
+      "ui/style.css"
+    ]
   },
   "splify2": {
     "settings": {

@@ -2,7 +2,7 @@ import type { Host, OutputV2, PluginSettingsContext, SpecV2 } from '@splify2/plu
 import { useState } from 'preact/hooks'
 import { Controls } from './controls'
 import { Scan } from './scan'
-import { DEFAULTS, freeName, hostPort, nameOk, newOutput, patchOutput, tunnelCount, warpOutputs, type Defaults, type WarpStatus } from './model'
+import { DEFAULTS, ENDPOINT_KEY, pinnedPoint, freeName, hostPort, nameOk, newOutput, patchOutput, tunnelCount, warpOutputs, type Defaults, type WarpStatus } from './model'
 import { Cloud } from './icons'
 
 interface Props {
@@ -139,7 +139,7 @@ function Group({ host, spec, name, o, live }: { host: Host; spec: SpecV2; name: 
       <Controls host={host} o={o} set={set} />
       <div class="warpbox-ui__tile">
         <div class="warpbox-ui__tile-title">{t('points.title')}</div>
-        <Scan host={host} group={name} applied={!!st} />
+        <Scan host={host} group={name} applied={!!st} pinned={pinnedPoint(o)} pin={(point) => set({ [ENDPOINT_KEY]: point })} />
       </div>
     </section>
   )

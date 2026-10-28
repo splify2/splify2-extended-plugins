@@ -3,7 +3,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { hostPort, type ScanState } from './model'
 
 /** Подбор точек входа: запуск, ход и таблица найденного. Точки ищет роутер (метод scan), страница только спрашивает. */
-export function Scan({ host, group, applied }: { host: Host; group: string; applied: boolean }) {
+export function Scan({ host, group, applied, pinned, pin }: { host: Host; group: string; applied: boolean; pinned: string; pin: (point: string | undefined) => void }) {
   const { Button, Flag } = host.ui
   const t = host.i18n.t
   const [scan, setScan] = useState<ScanState | null>(null)
@@ -44,6 +44,7 @@ export function Scan({ host, group, applied }: { host: Host; group: string; appl
         )}
       </div>
       {err && <div class="warpbox-ui__error">{err}</div>}
+      {pinned && <div class="warpbox-ui__note">{t('points.pinned', { point: pinned })}</div>}
       {pts.length > 0 && !scan?.running && (
         <div class="warpbox-ui__tablewrap">
           <table class="warpbox-ui__points">
@@ -53,6 +54,7 @@ export function Scan({ host, group, applied }: { host: Host; group: string; appl
                 {!masque && <th>{t('points.col.colo')}</th>}
                 <th>{t('points.col.rtt')}</th>
                 {!masque && <th>{t('points.col.loss')}</th>}
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -67,6 +69,11 @@ export function Scan({ host, group, applied }: { host: Host; group: string; appl
                   {!masque && <td>{p.cc ? <Flag cc={p.cc} /> : null} {p.colo || '—'}</td>}
                   <td>{typeof p.rtt === 'number' && p.rtt >= 0 ? `${p.rtt} мс` : '—'}</td>
                   {!masque && <td>{p.loss ?? 0}%</td>}
+                  <td>
+                    {pinned === hostPort(p.ip, p.port)
+                      ? <Button variant="ghost" size="sm" onClick={() => pin(undefined)}>{t('points.unpin')}</Button>
+                      : <Button variant="ghost" size="sm" disabled={masque ? !p.ok : !!p.class} onClick={() => pin(hostPort(p.ip, p.port))}>{t('points.pin')}</Button>}
+                  </td>
                 </tr>
               ))}
             </tbody>

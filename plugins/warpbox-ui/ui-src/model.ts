@@ -34,6 +34,17 @@ export function freeName(outputs: Record<string, unknown> | undefined): string {
 /** Имя нового выхода: ядро держит имена туннелей «<имя>.<n>», поэтому имя короткое. */
 export const nameOk = (n: string): boolean => /^[a-z][a-z0-9_-]{0,14}$/.test(n)
 
+/** Ключ выхода `warp`, которым закрепляют точку входа («адрес:порт»; нет ключа — модуль подбирает сам).
+ *  ТРЕБУЕТ ЯДРО: в спеке v2 (spec-v2.md, kind warp) такого ключа пока нет; пока его нет, ядро отвечает на
+ *  него отказом проверки, и отказ виден человеку там же, где отказы других правок. */
+export const ENDPOINT_KEY = 'endpoint'
+
+/** Закреплённая точка выхода или '' . */
+export function pinnedPoint(o: OutputV2 | undefined): string {
+  const v = o?.[ENDPOINT_KEY]
+  return typeof v === 'string' ? v : ''
+}
+
 /** Правка ключей выхода на копии спеки. Ключ без значения (`undefined`) убирается — умолчание ядра. */
 export function patchOutput(draft: SpecV2, name: string, patch: Record<string, unknown>): boolean {
   const o = draft.outputs?.[name]

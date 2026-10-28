@@ -1,7 +1,7 @@
 // Стенд чистой логики плагина: node --experimental-strip-types --test tests/model.test.ts
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { codes, countItems, DEFAULTS, freeName, hostPort, nameOk, newOutput, num, patchOutput, tunnelCount, warpOutputs } from '../ui-src/model'
+import { pinnedPoint, codes, countItems, DEFAULTS, freeName, hostPort, nameOk, newOutput, num, patchOutput, tunnelCount, warpOutputs } from '../ui-src/model'
 
 test('число из спеки: строка читается, мусор — умолчание', () => {
   assert.equal(num('3', 1), 3)
@@ -57,4 +57,11 @@ test('кнопки числа туннелей и адрес точки', () => 
   assert.deepEqual(countItems(8).map((i) => i.value), ['1', '2', '3', '4', '5', '8'])
   assert.equal(hostPort('1.2.3.4', 2408), '1.2.3.4:2408')
   assert.equal(hostPort('2606::1', 443), '[2606::1]:443')
+})
+
+test('закреплённая точка: строка из ключа выхода, иначе пусто', () => {
+  assert.equal(pinnedPoint({ kind: 'warp', endpoint: '162.159.192.1:2408' }), '162.159.192.1:2408')
+  assert.equal(pinnedPoint({ kind: 'warp' }), '')
+  assert.equal(pinnedPoint({ kind: 'warp', endpoint: 5 }), '')
+  assert.equal(pinnedPoint(undefined), '')
 })

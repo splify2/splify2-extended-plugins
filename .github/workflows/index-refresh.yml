@@ -1,0 +1,46 @@
+name: Индекс плагинов
+
+# Переподпись индекса (gh-pages): он живёт 30 дней, и роутер просроченный не принимает. Раз в неделю — новые generated
+# и expires, содержимое прежнее. Секреты S2P_KEY_INDEX и S2P_KEY_PLUGINS; пишет GITHUB_TOKEN.
+on:
+  schedule:
+    - cron: '37 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+      - name: Переподписать индекс
+        env:
+          SDK_REF: ${{ vars.PLUGIN_SDK_REF || 'main' }}
+          S2P_KEY_PLUGINS: ${{ secrets.S2P_KEY_PLUGINS }}
+          S2P_KEY_INDEX: ${{ secrets.S2P_KEY_INDEX }}
+          PUBLISH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          [ -n "$S2P_KEY_PLUGINS" ] && [ -n "$S2P_KEY_INDEX" ] || { echo "::error::нет секретов S2P_KEY_PLUGINS и S2P_KEY_INDEX"; exit 1; }
+          git clone -q --depth 1 --branch "$SDK_REF" https://github.com/splify2/plugin-sdk "$RUNNER_TEMP/plugin-sdk"
+          ( cd "$RUNNER_TEMP/plugin-sdk" && sh build.sh )
+          K="$RUNNER_TEMP/k"; mkdir -p "$K"
+          ( umask 077; printf '%s\n' "$S2P_KEY_PLUGINS" > "$K/plugins.sec"; printf '%s\n' "$S2P_KEY_INDEX" > "$K/index.sec" )
+          python3 - "$K/plugins.sec" "$K/plugins.pub" <<'PY'
+          import base64, sys
+          raw = base64.b64decode([l for l in open(sys.argv[1]).read().splitlines() if l.strip()][-1])
+          open(sys.argv[2], "w").write("untrusted comment: splify2 plugins key %s\n%s\n"
+              % (raw[32:40].hex(), base64.b64encode(b"Ed" + raw[32:40] + raw[72:104]).decode()))
+          PY
+          S2P="$RUNNER_TEMP/plugin-sdk/bin/s2p" INDEX_SLUG="$GITHUB_REPOSITORY" INDEX_ID=splify2-extended-plugins \
+            INDEX_KEY="$K/index.sec" PUBS="$K/plugins.pub" sh "$RUNNER_TEMP/plugin-sdk/tools/publish-index.sh"

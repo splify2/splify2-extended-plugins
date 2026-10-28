@@ -1,0 +1,60 @@
+name: Стенды
+
+# Стенды на каждый push: lint --official и тест совместимости SDK каждого плагина, стенд recheck под настоящим демоном
+# steer (tests/recheckmatch.sh), стенды warpbox-ui (логика и методы на заглушке хоста splify2-api), lint манифеста tgws
+# из дерева steer. Ветки SDK и steer — переменные PLUGIN_SDK_REF и STEER_REF.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+      - name: SDK плагинов и ядро steer
+        env:
+          SDK_REF: ${{ vars.PLUGIN_SDK_REF || 'main' }}
+          STEER_REF: ${{ vars.STEER_REF || 'main' }}
+        run: |
+          set -eu
+          sudo apt-get install -y -qq nftables >/dev/null
+          git clone -q --depth 1 --branch "$SDK_REF" https://github.com/splify2/plugin-sdk "$RUNNER_TEMP/plugin-sdk"
+          ( cd "$RUNNER_TEMP/plugin-sdk" && sh build.sh )
+          git clone -q --depth 1 --branch "$STEER_REF" https://github.com/splify2/steer "$RUNNER_TEMP/steer"
+          make -C "$RUNNER_TEMP/steer" all
+          {
+            echo "PLUGIN_SDK=$RUNNER_TEMP/plugin-sdk"
+            echo "STEER_DIR=$RUNNER_TEMP/steer"
+            echo "PATH=$RUNNER_TEMP/plugin-sdk/bin:$PATH"
+          } >> "$GITHUB_ENV"
+      - name: lint и сборка без подписи
+        run: |
+          set -eu
+          # recheck без движка — только lint (его движок собирается в выпуске), tgws — lint манифеста из дерева steer.
+          sh plugins/build.sh recheck warpbox-ui
+          d="$RUNNER_TEMP/tgws"; cp -R "$STEER_DIR/plugins/tgws" "$d"
+          sed -i "s/\"@VERSION@\"/\"$(cat "$STEER_DIR/VERSION")\"/" "$d/plugin.json"
+          s2p lint --official --schema-only "$d"   # программы bin/tgws здесь нет: она из сборки steer
+      - name: warpbox-ui
+        working-directory: plugins/warpbox-ui
+        run: |
+          set -eu
+          npm install --no-save --no-audit --no-fund "$PLUGIN_SDK/packages/plugin-api" preact@^10.29.7 vite@^7 typescript@~6.0.2 esbuild
+          npm run check
+          npm test
+          PLUGIN_SDK="$PLUGIN_SDK" sh tests/rpc.sh
+      - name: recheck
+        run: STEER="$STEER_DIR/build/steer" sh tests/recheckmatch.sh

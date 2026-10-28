@@ -1,0 +1,238 @@
+name: Выпуск
+
+# Выпуск плагинов splify2-extended-plugins по кнопке: архивы .s2p, подписанные ключом роли plugins, выпуск здесь и
+# индекс репозитория — ветка gh-pages этого же репозитория (https://splify2.github.io/splify2-extended-plugins/, его
+# подключает пакет splify2: files/etc/steer/plugins/repos.d/splify2-extended-plugins.json).
+#
+#   tgws      — программа из дерева ядра steer (STEER_REF), по архиву на каждую из 10 архитектур build/arches.sh;
+#   recheck   — движок steer-dpi-live из закрытого репозитория recheck (секрет RECHECK_TOKEN), те же 10 архитектур;
+#   warpbox-ui — без машинного кода, один архив -all.
+#
+# Секреты: S2P_KEY_PLUGINS (подпись архивов), S2P_KEY_INDEX (подпись индекса), RECHECK_TOKEN (чтение xyzmean/recheck).
+# Без любого из них выпуск не начинается. В gh-pages пишет GITHUB_TOKEN этого репозитория.
+on:
+  workflow_dispatch:
+    inputs:
+      steer_ref:
+        description: 'Тег или ветка splify2/steer, из которой собирается tgws (например v2.1.0)'
+        required: true
+        type: string
+      recheck_ref:
+        description: 'Ветка или тег xyzmean/recheck для движка recheck'
+        required: false
+        default: 'codex/router-dpi-core'
+        type: string
+      plugins:
+        description: 'Какие плагины выпустить (через пробел); пусто — все'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    outputs:
+      arches: ${{ steps.arches.outputs.list }}
+    steps:
+      - name: Секреты на месте
+        env:
+          S2P_KEY_PLUGINS: ${{ secrets.S2P_KEY_PLUGINS }}
+          S2P_KEY_INDEX: ${{ secrets.S2P_KEY_INDEX }}
+          RECHECK_TOKEN: ${{ secrets.RECHECK_TOKEN }}
+        run: |
+          miss=""
+          [ -n "$S2P_KEY_PLUGINS" ] || miss="$miss S2P_KEY_PLUGINS"
+          [ -n "$S2P_KEY_INDEX" ] || miss="$miss S2P_KEY_INDEX"
+          [ -n "$RECHECK_TOKEN" ] || miss="$miss RECHECK_TOKEN"
+          [ -z "$miss" ] || { echo "::error::нет секретов:$miss — архивы и индекс подписываются только ключами splify2"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          repository: splify2/steer
+          ref: ${{ inputs.steer_ref }}
+          sparse-checkout: build/arches.sh
+      # Архитектуры — из build/arches.sh ядра той же версии, а не списком здесь.
+      - id: arches
+        run: |
+          set -eu
+          l=$(sed -n '/^ISAS="/,/^"$/p' build/arches.sh | grep '^[a-z0-9_.-]*:' | cut -d: -f1 |
+              python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().split()))')
+          echo "list=$l" >> "$GITHUB_OUTPUT"
+
+  tgws:
+    needs: secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: ${{ fromJSON(needs.secrets.outputs.arches) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: splify2/steer
+          ref: ${{ inputs.steer_ref }}
+      - name: Сборка steer под ${{ matrix.arch }}
+        env:
+          STEER_ARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          set -o pipefail
+          ./build.sh 2>&1 | tee "$RUNNER_TEMP/build.log"
+          p="build/libs/$STEER_ARCH/plugins/tgws/bin/tgws"
+          [ -x "$p" ] || { echo "::error::программа tgws под $STEER_ARCH не собрана"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/out/$STEER_ARCH/plugins/tgws/bin"
+          cp "$p" "$RUNNER_TEMP/out/$STEER_ARCH/plugins/tgws/bin/tgws"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tgws-${{ matrix.arch }}
+          path: ${{ runner.temp }}/out
+          retention-days: 3
+
+  recheck:
+    needs: secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: ${{ fromJSON(needs.secrets.outputs.arches) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: xyzmean/recheck
+          ref: ${{ inputs.recheck_ref }}
+          token: ${{ secrets.RECHECK_TOKEN }}
+          path: recheck
+      - uses: actions/checkout@v4
+        with:
+          repository: splify2/steer
+          ref: ${{ inputs.steer_ref }}
+          path: steer
+      - name: Движок recheck под ${{ matrix.arch }}
+        env:
+          RECHECK_ARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          # Образ сборщика ядра (zig, цели build/arches.sh) — основа образа recheck.
+          docker build -q -t steer-builder:wolfssl steer/build >/dev/null
+          STEER_DIR="$GITHUB_WORKSPACE/steer" sh recheck/build.sh
+          e="recheck/build/$RECHECK_ARCH/steer-dpi-live"
+          [ -x "$e" ] || { echo "::error::движок recheck под $RECHECK_ARCH не собран"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/out/$RECHECK_ARCH"
+          cp "$e" "$RUNNER_TEMP/out/$RECHECK_ARCH/steer-dpi-live"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recheck-${{ matrix.arch }}
+          path: ${{ runner.temp }}/out
+          retention-days: 3
+
+  release:
+    needs: [secrets, tgws, recheck]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: splify2/steer
+          ref: ${{ inputs.steer_ref }}
+          path: .steer
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tgws-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/steer-libs
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: recheck-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/engines
+
+      - name: SDK и ключи
+        env:
+          SDK_REF: ${{ vars.PLUGIN_SDK_REF || 'main' }}
+          S2P_KEY_PLUGINS: ${{ secrets.S2P_KEY_PLUGINS }}
+          S2P_KEY_INDEX: ${{ secrets.S2P_KEY_INDEX }}
+        run: |
+          set -eu
+          git clone -q --depth 1 --branch "$SDK_REF" https://github.com/splify2/plugin-sdk "$RUNNER_TEMP/plugin-sdk"
+          ( cd "$RUNNER_TEMP/plugin-sdk" && sh build.sh )
+          K="$RUNNER_TEMP/s2p-keys"
+          mkdir -p "$K"
+          ( umask 077; printf '%s\n' "$S2P_KEY_PLUGINS" > "$K/plugins.sec"; printf '%s\n' "$S2P_KEY_INDEX" > "$K/index.sec" )
+          python3 - "$K/plugins.sec" "$K/plugins.pub" <<'PY'
+          import base64, sys
+          lines = [l for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+          raw = base64.b64decode(lines[-1])
+          if len(raw) != 104 or raw[:4] != b"EdBK" or any(raw[4:8]):
+              sys.exit("S2P_KEY_PLUGINS — не закрытый ключ usign без пароля")
+          open(sys.argv[2], "w").write("untrusted comment: splify2 plugins key %s\n%s\n"
+              % (raw[32:40].hex(), base64.b64encode(b"Ed" + raw[32:40] + raw[72:104]).decode()))
+          PY
+          {
+            echo "PLUGIN_SDK=$RUNNER_TEMP/plugin-sdk"
+            echo "S2P_KEYS=$K"
+            echo "PATH=$RUNNER_TEMP/plugin-sdk/bin:$PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Собрать и подписать
+        env:
+          INPUT_PLUGINS: ${{ inputs.plugins }}
+        run: |
+          set -eu
+          # Интерфейс warpbox-ui собирает s2p build (npm run build); @splify2/plugin-api — из SDK, пока не опубликован.
+          ( cd plugins/warpbox-ui && npm install --no-save --no-audit --no-fund "$PLUGIN_SDK/packages/plugin-api" \
+              preact@^10.29.7 vite@^7 typescript@~6.0.2 esbuild )
+          find "$RUNNER_TEMP/steer-libs" "$RUNNER_TEMP/engines" -type f -exec chmod 0755 {} +
+          out="$RUNNER_TEMP/dist"
+          # shellcheck disable=SC2086
+          S2P_KEY="$S2P_KEYS/plugins.sec" S2P_OUT_DIR="$out" STEER_DIR="$GITHUB_WORKSPACE/.steer" \
+            STEER_LIBS="$RUNNER_TEMP/steer-libs" RECHECK_ENGINE_DIR="$RUNNER_TEMP/engines" \
+            sh plugins/build.sh $INPUT_PLUGINS
+          # По архиву на архитектуру у tgws и recheck — столько, сколько архитектур в build/arches.sh ядра.
+          n=$(sed -n '/^ISAS="/,/^"$/p' .steer/build/arches.sh | grep -c '^[a-z0-9_.-]*:')
+          for id in tgws recheck; do
+            case " ${INPUT_PLUGINS:-tgws recheck} " in *" $id "*) ;; *) continue ;; esac
+            c=$(find "$out" -name "$id-*.s2p" | wc -l)
+            [ "$c" -eq "$n" ] || { echo "::error::архивов $id $c, а архитектур $n"; ls -la "$out"; exit 1; }
+          done
+          for f in "$out"/*.s2p; do s2p verify "$f" --pub "$S2P_KEYS/plugins.pub" >/dev/null || {
+            echo "::error::$f не подписан ключом plugins"; exit 1; }; done
+          ls -la "$out"
+          echo "DIST=$out" >> "$GITHUB_ENV"
+          echo "TAG=r$(date -u +%Y.%m.%d)-$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Опубликовать выпуск
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: splify2-extended-plugins ${{ env.TAG }}
+          files: ${{ env.DIST }}/*.s2p
+          body: |
+            Плагины splify2-extended-plugins. Ставятся из вкладки «Плагины» splify2 (репозиторий
+            splify2-extended-plugins подключён по умолчанию) или `steer plugin install <id>`.
+            tgws собран из splify2/steer ${{ inputs.steer_ref }}.
+
+      - name: Индекс репозитория (gh-pages)
+        env:
+          PUBLISH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          echo '{"plugins":{"recheck":{"key_role":"plugins","tags":["dpi"]},"tgws":{"key_role":"plugins","tags":["protocol"]},"warpbox-ui":{"key_role":"plugins","tags":["interface"]}}}' > "$RUNNER_TEMP/meta.json"
+          INDEX_SLUG="$GITHUB_REPOSITORY" INDEX_ID=splify2-extended-plugins INDEX_NAME='splify2 extended plugins' \
+            INDEX_KEY="$S2P_KEYS/index.sec" PUBS="$S2P_KEYS/plugins.pub" ARCHIVES="$DIST" META="$RUNNER_TEMP/meta.json" \
+            sh "$PLUGIN_SDK/tools/publish-index.sh"

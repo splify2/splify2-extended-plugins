@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "desktop-api",
+  "version": "1.0.0",
+  "type": "plugin",
+  "name": "Desktop API",
+  "description": "HTTP gateway for apps outside LuCI: device sign-in with tokens, calls, jobs and events",
+  "license": "GPL-3.0-only",
+  "homepage": "https://github.com/splify2/splify2-extended-plugins",
+  "compat": {
+    "host-api": "^1.0",
+    "splify2-api": "^1.2"
+  },
+  "arch": "all",
+  "permissions": [
+    "splify2.cgi"
+  ],
+  "splify2": {
+    "cgi": [
+      "cgi/splify2-api"
+    ]
+  },
+  "i18n": { "languages": ["ru", "en"] }
+}

@@ -1,0 +1,4 @@
+{
+  "plugin.name": "Desktop API",
+  "plugin.description": "HTTP-шлюз для приложений вне LuCI: вход устройств по токенам, вызовы, задания и события"
+}

@@ -1,0 +1,4 @@
+{
+  "plugin.name": "Desktop API",
+  "plugin.description": "HTTP gateway for apps outside LuCI: device sign-in with tokens, calls, jobs and events"
+}

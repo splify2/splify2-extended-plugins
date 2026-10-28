@@ -7,6 +7,7 @@
 | Плагин | Что делает |
 |---|---|
 | [`recheck`](plugins/recheck) | обход блокировок по содержимому трафика: служба под надзором steer, правила nft в слотах ядра, настройки и состояние во вкладке «Плагины». Движок `steer-dpi-live` — закрытый (репозиторий recheck), в архив ложится готовым файлом |
+| [`desktop-api`](plugins/desktop-api) | шлюз `/v1/...` для приложений вне LuCI (Desktop): вход устройств по токенам, вызовы, задания, события ядра. Файл `cgi/splify2-api` (ucode) хост splify2 выставляет в `/www/cgi-bin`, пока плагин включён (`splify2.cgi`, splify2-api 1.2, право `splify2.cgi`); устройства — в `/etc/steer/plugins/conf/desktop-api`. Тексты отказов — кодами `gateway.*`, словари `i18n/backend` |
 | [`tgws`](plugins/tgws) | мост Telegram: соединения клиентов сети с дата-центрами Telegram уходят веб-сокетом через Cloudflare, в приложении ничего не настраивается; пул доменов, пути дата-центров и туннели WARP — в настройках во вкладке «Плагины». Исходник — в дереве ядра steer (`plugins/tgws`, программа на C), отсюда собирается архив |
 
 ## Сборка и проверка
@@ -18,6 +19,7 @@ RECHECK_ENGINE_DIR=<recheck>/build sh plugins/build.sh recheck   # recheck: .s2p
 STEER_DIR=<steer> sh plugins/build.sh tgws   # tgws: .s2p по архитектурам, под которые steer собрал программу (./build.sh)
 
 STEER=<steer>/build/steer PLUGIN_SDK=<plugin-sdk> sh tests/recheckmatch.sh   # стенд recheck
+PLUGIN_SDK=<plugin-sdk> sh tests/desktopapimatch.sh   # стенд desktop-api (ucode из docker-образа openwrt/rootfs)
 ```
 
 Стенд recheck запускает службу под настоящим демоном steer (ядро 2.1, steer-api 1.2) с движком-заглушкой и проверяет

@@ -9,7 +9,7 @@ name: Выпуск
 #   warpbox-ui — без машинного кода, один архив -all.
 #
 # Секреты: S2P_KEY_PLUGINS (подпись архивов), S2P_KEY_INDEX (подпись индекса), RECHECK_TOKEN (чтение xyzmean/recheck).
-# Без любого из них выпуск не начинается. В gh-pages пишет GITHUB_TOKEN этого репозитория.
+# Без ключей выпуск не начинается; RECHECK_TOKEN нужен, только когда выпускается recheck. В gh-pages пишет GITHUB_TOKEN этого репозитория.
 on:
   workflow_dispatch:
     inputs:
@@ -40,17 +40,28 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       arches: ${{ steps.arches.outputs.list }}
+      recheck: ${{ steps.want.outputs.recheck }}
     steps:
+      # Движок recheck собирается из закрытого репозитория, и только когда recheck входит в выпускаемое (пустой
+      # список — все плагины): выпуск остальных плагинов не должен зависеть от токена к чужому для него коду.
+      - id: want
+        env:
+          INPUT_PLUGINS: ${{ inputs.plugins }}
+        run: |
+          r=false
+          case " ${INPUT_PLUGINS:-recheck} " in *" recheck "*) r=true ;; esac
+          echo "recheck=$r" >> "$GITHUB_OUTPUT"
       - name: Секреты на месте
         env:
           S2P_KEY_PLUGINS: ${{ secrets.S2P_KEY_PLUGINS }}
           S2P_KEY_INDEX: ${{ secrets.S2P_KEY_INDEX }}
           RECHECK_TOKEN: ${{ secrets.RECHECK_TOKEN }}
+          WANT_RECHECK: ${{ steps.want.outputs.recheck }}
         run: |
           miss=""
           [ -n "$S2P_KEY_PLUGINS" ] || miss="$miss S2P_KEY_PLUGINS"
           [ -n "$S2P_KEY_INDEX" ] || miss="$miss S2P_KEY_INDEX"
-          [ -n "$RECHECK_TOKEN" ] || miss="$miss RECHECK_TOKEN"
+          [ "$WANT_RECHECK" != true ] || [ -n "$RECHECK_TOKEN" ] || miss="$miss RECHECK_TOKEN"
           [ -z "$miss" ] || { echo "::error::нет секретов:$miss — архивы и индекс подписываются только ключами splify2"; exit 1; }
       - uses: actions/checkout@v4
         with:
@@ -97,6 +108,7 @@ jobs:
 
   recheck:
     needs: secrets
+    if: needs.secrets.outputs.recheck == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -135,6 +147,8 @@ jobs:
 
   release:
     needs: [secrets, tgws, recheck]
+    # recheck пропущен, когда его нет в выпускаемом: это не отказ.
+    if: ${{ !cancelled() && needs.secrets.result == 'success' && needs.tgws.result == 'success' && (needs.recheck.result == 'success' || needs.recheck.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -232,7 +246,7 @@ jobs:
           PUBLISH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          echo '{"plugins":{"recheck":{"key_role":"plugins","tags":["dpi"]},"tgws":{"key_role":"plugins","tags":["protocol"]},"warpbox-ui":{"key_role":"plugins","tags":["interface"]}}}' > "$RUNNER_TEMP/meta.json"
+          echo '{"plugins":{"recheck":{"key_role":"plugins","tags":["dpi"]},"tgws":{"key_role":"plugins","tags":["protocol"]},"warpbox-ui":{"key_role":"plugins","tags":["interface"]},"desktop-api":{"key_role":"plugins","tags":["interface"]}}}' > "$RUNNER_TEMP/meta.json"
           INDEX_SLUG="$GITHUB_REPOSITORY" INDEX_ID=splify2-extended-plugins INDEX_NAME='splify2 extended plugins' \
             INDEX_KEY="$S2P_KEYS/index.sec" PUBS="$S2P_KEYS/plugins.pub" ARCHIVES="$DIST" META="$RUNNER_TEMP/meta.json" \
             sh "$PLUGIN_SDK/tools/publish-index.sh"

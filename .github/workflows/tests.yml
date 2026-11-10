@@ -33,6 +33,9 @@ jobs:
           sudo apt-get install -y -qq nftables >/dev/null
           git clone -q --depth 1 --branch "$SDK_REF" https://github.com/splify2/plugin-sdk "$RUNNER_TEMP/plugin-sdk"
           ( cd "$RUNNER_TEMP/plugin-sdk" && sh build.sh )
+          # Пакет @splify2/plugin-api интерфейсы плагинов берут из SDK (пока он не опубликован в npm), а его dist
+          # в репозитории нет — собирается здесь, иначе сборка интерфейса падает на «Cannot find module …/dist/vite.js».
+          ( cd "$RUNNER_TEMP/plugin-sdk/packages/plugin-api" && npm install --no-audit --no-fund >/dev/null && npm run build >/dev/null )
           git clone -q --depth 1 --branch "$STEER_REF" https://github.com/splify2/steer "$RUNNER_TEMP/steer"
           make -C "$RUNNER_TEMP/steer" all
           {
@@ -43,8 +46,12 @@ jobs:
       - name: lint и сборка без подписи
         run: |
           set -eu
+          # Интерфейс warpbox-ui собирает s2p build (npm run build): его зависимости ставятся до сборки, а не после —
+          # иначе шаг падал на «vite: not found».
+          ( cd plugins/warpbox-ui && npm install --no-save --no-audit --no-fund "$PLUGIN_SDK/packages/plugin-api" \
+              preact@^10.29.7 vite@^7 typescript@~6.0.2 esbuild )
           # recheck без движка — только lint (его движок собирается в выпуске), tgws — lint манифеста из дерева steer.
-          sh plugins/build.sh recheck warpbox-ui
+          sh plugins/build.sh recheck warpbox-ui desktop-api
           d="$RUNNER_TEMP/tgws"; cp -R "$STEER_DIR/plugins/tgws" "$d"
           sed -i "s/\"@VERSION@\"/\"$(cat "$STEER_DIR/VERSION")\"/" "$d/plugin.json"
           s2p lint --official --schema-only "$d"   # программы bin/tgws здесь нет: она из сборки steer

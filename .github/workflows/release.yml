@@ -185,6 +185,9 @@ jobs:
           set -eu
           git clone -q --depth 1 --branch "$SDK_REF" https://github.com/splify2/plugin-sdk "$RUNNER_TEMP/plugin-sdk"
           ( cd "$RUNNER_TEMP/plugin-sdk" && sh build.sh )
+          # Пакет @splify2/plugin-api интерфейсы плагинов берут из SDK (пока он не опубликован в npm), а его dist
+          # в репозитории нет — собирается здесь, иначе сборка интерфейса падает на «Cannot find module …/dist/vite.js».
+          ( cd "$RUNNER_TEMP/plugin-sdk/packages/plugin-api" && npm install --no-audit --no-fund >/dev/null && npm run build >/dev/null )
           K="$RUNNER_TEMP/s2p-keys"
           mkdir -p "$K"
           ( umask 077; printf '%s\n' "$S2P_KEY_PLUGINS" > "$K/plugins.sec"; printf '%s\n' "$S2P_KEY_INDEX" > "$K/index.sec" )
@@ -211,6 +214,8 @@ jobs:
           # Интерфейс warpbox-ui собирает s2p build (npm run build); @splify2/plugin-api — из SDK, пока не опубликован.
           ( cd plugins/warpbox-ui && npm install --no-save --no-audit --no-fund "$PLUGIN_SDK/packages/plugin-api" \
               preact@^10.29.7 vite@^7 typescript@~6.0.2 esbuild )
+          # Каталога движков нет, когда recheck не выпускается.
+          mkdir -p "$RUNNER_TEMP/steer-libs" "$RUNNER_TEMP/engines"
           find "$RUNNER_TEMP/steer-libs" "$RUNNER_TEMP/engines" -type f -exec chmod 0755 {} +
           out="$RUNNER_TEMP/dist"
           # shellcheck disable=SC2086

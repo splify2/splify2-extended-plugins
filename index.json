@@ -1,0 +1,174 @@
+{
+  "expires": "2026-12-11T08:16:35Z",
+  "generated": "2026-11-11T08:16:35Z",
+  "mirrors": [
+    "https://splify2.github.io/splify2-extended-plugins/",
+    "https://cdn.jsdelivr.net/gh/splify2/splify2-extended-plugins@gh-pages/"
+  ],
+  "plugins": {
+    "desktop-api": {
+      "description": "HTTP gateway for apps outside LuCI: device sign-in with tokens, calls, jobs and events",
+      "key_role": "plugins",
+      "license": "GPL-3.0-only",
+      "name": "Desktop API",
+      "tags": [
+        "interface"
+      ],
+      "type": "plugin",
+      "versions": [
+        {
+          "assets": {
+            "all": {
+              "installed": 34521,
+              "path": "desktop-api/1.0.0/desktop-api-1.0.0-all.s2p",
+              "sha256": "db6aae6b2e9bf66866d8aed1a4ba9a166c1d25c3c455240904efd33809001ea8",
+              "size": 12710
+            }
+          },
+          "compat": {
+            "host-api": "^1.0",
+            "splify2-api": "^1.2"
+          },
+          "provides": {},
+          "released": "2026-11-11T08:16:35Z",
+          "version": "1.0.0"
+        }
+      ]
+    },
+    "tgws": {
+      "description": "Telegram через Cloudflare, без настройки в приложении",
+      "key_role": "plugins",
+      "license": "GPL-3.0-only",
+      "name": "Мост Telegram",
+      "tags": [
+        "protocol"
+      ],
+      "type": "plugin",
+      "versions": [
+        {
+          "assets": {
+            "aarch64_cortex-a53": {
+              "installed": 728328,
+              "path": "tgws/2.1.0/tgws-2.1.0-aarch64_cortex-a53.s2p",
+              "sha256": "bb04e85af5c73cc9300c8319627fdfa1b65961bda5019e66e9947ba1d3703456",
+              "size": 423220
+            },
+            "aarch64_cortex-a72": {
+              "installed": 692712,
+              "path": "tgws/2.1.0/tgws-2.1.0-aarch64_cortex-a72.s2p",
+              "sha256": "c498da8989c16f382ed983e83d8998ac80611823436a0135b3d0910266c1f236",
+              "size": 395643
+            },
+            "aarch64_cortex-a73": {
+              "installed": 692712,
+              "path": "tgws/2.1.0/tgws-2.1.0-aarch64_cortex-a73.s2p",
+              "sha256": "2a676d59d2614d89bef1a795ad53a52c6626f41b21a29e4299d3cba5fd4ffc72",
+              "size": 395638
+            },
+            "aarch64_generic": {
+              "installed": 740832,
+              "path": "tgws/2.1.0/tgws-2.1.0-aarch64_generic.s2p",
+              "sha256": "e17f5266c2addd1d7f9d8fff9981da3fdd584be11eeea8628b604677eef00ddf",
+              "size": 394105
+            },
+            "arm_cortex-a7_neon-vfpv4": {
+              "installed": 584696,
+              "path": "tgws/2.1.0/tgws-2.1.0-arm_cortex-a7_neon-vfpv4.s2p",
+              "sha256": "7ddb636529f6316ce80b65f33cd69b249daea102aad792370d47553134422ca2",
+              "size": 349980
+            },
+            "arm_cortex-a9": {
+              "installed": 587508,
+              "path": "tgws/2.1.0/tgws-2.1.0-arm_cortex-a9.s2p",
+              "sha256": "1fbcb90bf4dd24a5c4c57ab1d8b78b82cd30244ebcacca2985c35957b20ed764",
+              "size": 350380
+            },
+            "arm_cortex-a9_neon": {
+              "installed": 652944,
+              "path": "tgws/2.1.0/tgws-2.1.0-arm_cortex-a9_neon.s2p",
+              "sha256": "9d511bd0c1fb3889509da9b2c0e0b7415905c6ec9ec9fe60a7ac70ea89ca7522",
+              "size": 350636
+            },
+            "arm_cortex-a9_vfpv3-d16": {
+              "installed": 652944,
+              "path": "tgws/2.1.0/tgws-2.1.0-arm_cortex-a9_vfpv3-d16.s2p",
+              "sha256": "c129d954e415fe590679d7a15a41b02374097beaf4d083c382099511d1347fe1",
+              "size": 350634
+            },
+            "mips_24kc": {
+              "installed": 844176,
+              "path": "tgws/2.1.0/tgws-2.1.0-mips_24kc.s2p",
+              "sha256": "e5c89b08d26641cbc7a4ddb2756af2684dd7079e7dc94328487a016fe6eeff24",
+              "size": 389162
+            },
+            "mipsel_24kc": {
+              "installed": 910596,
+              "path": "tgws/2.1.0/tgws-2.1.0-mipsel_24kc.s2p",
+              "sha256": "267ef7a5bf563087618a186a35dc82361d17b009c629b38877ffa761724ec3c3",
+              "size": 388675
+            },
+            "x86_64": {
+              "installed": 726568,
+              "path": "tgws/2.1.0/tgws-2.1.0-x86_64.s2p",
+              "sha256": "2d2d474fd98cb36186de1709de9683378486eb3ec9d925a9e7f1c7e7938bf4bf",
+              "size": 385499
+            }
+          },
+          "compat": {
+            "splify2-api": "^1.0",
+            "steer-api": "^1.5"
+          },
+          "provides": {
+            "commands": [
+              "tgws-probe"
+            ],
+            "kinds": [
+              "tgws"
+            ]
+          },
+          "released": "2026-11-11T08:16:35Z",
+          "version": "2.1.0"
+        }
+      ]
+    },
+    "warpbox-ui": {
+      "description": "Cloudflare WARP in the panel: outputs, tunnels, entry points, country",
+      "key_role": "plugins",
+      "license": "GPL-3.0-only",
+      "name": "WARP",
+      "tags": [
+        "interface"
+      ],
+      "type": "plugin",
+      "versions": [
+        {
+          "assets": {
+            "all": {
+              "installed": 50678,
+              "path": "warpbox-ui/1.0.0/warpbox-ui-1.0.0-all.s2p",
+              "sha256": "34f3452268ae55861d61a4086609d481af52aa67e33190eef0aa58ffdd76c188",
+              "size": 16655
+            }
+          },
+          "compat": {
+            "host-api": "^1.0",
+            "splify2-api": "^1.0"
+          },
+          "provides": {},
+          "released": "2026-11-11T08:16:35Z",
+          "requires": {
+            "plugins": {
+              "warpbox": "^2.1"
+            }
+          },
+          "version": "1.0.0"
+        }
+      ]
+    }
+  },
+  "repo": {
+    "id": "splify2-extended-plugins",
+    "name": "splify2 extended plugins"
+  },
+  "schema": 1
+}
